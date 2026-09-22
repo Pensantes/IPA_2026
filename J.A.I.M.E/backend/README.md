@@ -1,3 +1,5 @@
+<!-- @format -->
+
 # JAIME API
 
 API mínima em FastAPI que expõe o JAIME via um único endpoint de chat.
@@ -6,9 +8,17 @@ API mínima em FastAPI que expõe o JAIME via um único endpoint de chat.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # e coloque sua chave real do Gemini
+cp .env.example .env   # e coloque sua chave real da NewAPI
 export $(cat .env | xargs)   # ou use python-dotenv/uvicorn --env-file
 uvicorn main:app --reload --port 8000
+```
+
+## Variáveis de ambiente
+
+```env
+NEWAPI_API_KEY=sua_chave_aqui
+NEWAPI_BASE_URL=https://api.newapi.pro/v1
+NEWAPI_MODEL=gpt-4o-mini
 ```
 
 ## Endpoint
@@ -16,6 +26,7 @@ uvicorn main:app --reload --port 8000
 `POST /chat`
 
 Body:
+
 ```json
 {
   "message": "isso é perigoso?",
@@ -24,6 +35,7 @@ Body:
 ```
 
 Resposta:
+
 ```json
 {
   "response": "Só se você tentar beber.",
