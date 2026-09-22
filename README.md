@@ -59,15 +59,96 @@ O assistente virtual **J.A.I.M.E** (Just An Intelligent Modular Entity) atua com
 - Ajustar entonação/tempo de resposta para soar natural com a personalidade definida
 - Testar latência total do ciclo (fala → STT → interpretação → RASPILUM → TTS) — meta de tempo de resposta aceitável para não perder o público
 
-### 5. Experimentos (a definir)
+### 5. Experimentos
 
-- Decidir experimento(s) final(is) a serem demonstrados
-  - Opção em consideração: **solução "semáforo"** (reação com mudança de cor visível — boa didática e visualmente chamativa)
-  - Outras opções: Vamos verificar com a professora Valéria
 - Validar segurança dos reagentes/materiais para ambiente com público leigo (crianças, visitantes não técnicos)
 - Definir tempo de execução de cada experimento (precisa ser compatível com o fluxo do estande — visitantes não podem esperar muito)
 - Preparar quantidade de material suficiente para repetições ao longo do dia do evento
 - Testar o experimento fisicamente na RASPILUM antes do evento (dry run completo)
+- Ideias de experimentos:
+
+> #### Reação 1: Garrafa azul
+>
+> Efeito esperado: Solução incolor, mas fica azul quando agitada. O experimento é esperado demorar 1/2 min para reverter.
+>
+> Materiais:
+>
+> 2x Erlenmeyer/garrafa com tampa de 200/250 ml
+> 5,4 g de KOH
+> 6,6 g de glicose
+> 4 gotas de azul de metileno
+> 200 ml de agua deionizada
+>
+> Validade: Preparar um ou dois dias antes (se possível, no dia, como caso ideal) para garantir a velocidade e intensidade da reação
+>
+> Preparação:
+> Colocar 100 ml de agua no recipiente
+> Adicionar 2,7 g de KOH, mexer até dissolver
+> Após a solução esfriar, adicionar 3,3 g de glicose, mexer até dissolver
+> Adicionar 2 gotas de azul de metileno
+> Tampar e deixar em repouso até ficar incolor
+>
+> Preparar duas soluções
+>
+> Proteção:
+> Óculos, jaleco e luvas para preparar (KOH é caustico)
+> Se for deixar armazenado por muito tempo, não usar recipiente de vidro
+>
+> Fonte: [The ‘blue bottle’ experiment](https://edu.rsc.org/experiments/the-blue-bottle-experiment/729.article?)
+
+> #### Reação 2: Solução semáforo
+>
+> Efeito esperado: Solução amarela, fica verde e depois vermelha ao agitar
+>
+> Materiais:
+>
+> 3x Bequer
+> 2x Erlenmeyer/garrafa com tampa de 200/250 ml
+> 2,24 g de NaOH
+> 5 g de glicose
+> 40 mg de Indigo Carmin
+> 200 ml de agua deionizada
+>
+> Validade: dura 60-75 min após o preparo. Depois disso, suas mudanças de cor se tornam menos impressionantes. Preparar 20/30 min antes de iniciar o evento
+>
+> Preparação:
+> No recipiente A, dissolva 1,12 g de NaOH em 50 ml de agua
+> Após resfriar, complete até 70 ml de agua
+> No recipiente B, dissolva 2,5 g de glicose em 10 ml de agua
+> No recipiente C, dissolva 20 mg do Indigo Carmin em 20 ml de agua
+> Misture os três no mesmo recipiente
+>
+> Preparar duas soluções, mas somente na hora
+>
+> Proteção:
+> Óculos, jaleco e luvas para preparar (NaOH é caustico)
+> Se for deixar armazenado por muito tempo, não usar recipiente de vidro
+>
+> Fonte: [Beyond the ‘blue bottle’](https://edu.rsc.org/exhibition-chemistry/beyond-the-blue-bottle/2000041.article?)
+
+> #### Reação 3: Equilíbrio com Cobalto
+>
+> Reação 3: Solução CoCl2
+> Efeito esperado: Solução azul, apos o aquecimento se torna rosa
+>
+> Materiais:
+>
+> 2x Erlenmeyer/garrafa com tampa de 200/250 ml
+> 9,52 g de CoCL2 . 6H2O
+> 200 ml de agua deionizada
+>
+> Validade: até 3 meses
+>
+> Preparação:
+> Dissolver 4,76 g de CoCl2 . 6H2O em 50 ml de água
+> Completar o volume e tampar o recipiente
+>
+> Preparar duas soluções
+>
+> Proteção:
+> Óculos, jaleco, luvas e máscara para o material particulado
+>
+> Fonte: Atividade 1 de Práticas Básicas de Laboratório - Valéria Spolon
 
 ### 6. Estande / Logística
 
@@ -77,9 +158,15 @@ O assistente virtual **J.A.I.M.E** (Just An Intelligent Modular Entity) atua com
 - Ensaiar a demonstração completa com a equipe antes do dia do evento
 - Plano B para falhas técnicas (roteiro alternativo sem depender 100% do sistema funcionando)
 
+#### Plano B:
+
+- Vídeos demonstrativos do sistema funcionando
+- Interação com o J.A.I.M.E. mesmo sem a RASPILUM
+- Explicação interativa dos experimentos e análise dos dados
+
 ## Integrantes
 
-- Filipi Martins
+- Filipi Martins **(Aluno Responsável)**
 - Gabriel de Oliveira Paiva
 - Gustavo Junqueira Colas
 - Matheus Luiz Mendes de Souza
