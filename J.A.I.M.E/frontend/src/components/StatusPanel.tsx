@@ -34,7 +34,7 @@ function StatusPanel({ uptime, tokens, loadPct, loadBar }: StatusPanelProps) {
     };
 
     fetchHealth();
-    const interval = setInterval(fetchHealth, 5000);
+    const interval = setInterval(fetchHealth, 30000);
     return () => clearInterval(interval);
   }, []);
 

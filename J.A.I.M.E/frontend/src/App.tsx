@@ -28,6 +28,74 @@ interface Message {
 
 const initialMessages: Message[] = [];
 
+function escapeJsonString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\"/g, '\\\"')
+    .replace(/\n/g, " ")
+    .replace(/\r/g, " ")
+    .replace(/\t/g, " ");
+}
+
+function extractStreamSnapshot(rawText: string): {
+  text: string;
+  emoji: string;
+} | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray(parsed.sentence)
+    ) {
+      const items = parsed.sentence.filter(
+        (item: { text?: string; emoji?: string }) =>
+          item && typeof item === "object",
+      );
+
+      const text = items
+        .map((item) => item.text ?? "")
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      const emoji =
+        [...items].reverse().find((item) => item.emoji)?.emoji ?? "🤖";
+      return { text, emoji };
+    }
+  } catch {
+    // fallback best-effort parsing while stream is still incomplete
+  }
+
+  const raw = trimmed;
+  const textMatches = Array.from(
+    raw.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g),
+  );
+  const emojiMatches = Array.from(
+    raw.matchAll(/"emoji"\s*:\s*"((?:\\.|[^"\\])*)"/g),
+  );
+
+  const text = textMatches
+    .map((match) =>
+      match[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/\\\\/g, "\\"),
+    )
+    .join(" ")
+    .trim();
+
+  const emoji = emojiMatches.length
+    ? emojiMatches[emojiMatches.length - 1][1].replace(/\\n/g, " ")
+    : "🤖";
+
+  if (!text && !emojiMatches.length) {
+    return null;
+  }
+
+  return { text: text || "JAIME está respondendo...", emoji: emoji || "🤖" };
+}
+
 function App() {
   const startRef = useRef<number>(Date.now());
 
@@ -42,6 +110,10 @@ function App() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [thinkingText, setThinkingText] = useState<string>(
+    "Reunindo contexto...",
+  );
+  const [activeEmoji, setActiveEmoji] = useState<string>("◉");
   const [waveHeights, setWaveHeights] = useState<number[]>(() =>
     Array.from({ length: 48 }, () => 6 + Math.random() * 90),
   );
@@ -98,90 +170,202 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!isSending) {
+      setThinkingText("Reunindo contexto...");
+      return;
+    }
+
+    const steps = [
+      "Reunindo contexto...",
+      "Analisando memórias...",
+      "Pensando na resposta...",
+      "Estruturando resposta...",
+      "Preparando a finalização...",
+    ];
+
+    let index = 0;
+    setThinkingText(steps[0]);
+
+    const timer = setInterval(() => {
+      index = (index + 1) % steps.length;
+      setThinkingText(steps[index]);
+    }, 1400);
+
+    return () => clearInterval(timer);
+  }, [isSending]);
+
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || isSending) return;
 
-    const userMessage: Message = {
-      id: Date.now(),
-      who: "Visitante",
-      text: trimmed,
-    };
-
-    setMessages((previous) => [...previous, userMessage]);
-    setInput("");
-    setIsSending(true);
-
-    // Configura um timeout de 20 segundos para a requisição
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-    try {
-      const response = await fetch(`${API_URL}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: trimmed,
-          session_id: sessionId ?? undefined,
-        }),
-        signal: controller.signal, // <-- Conecta o abort ao fetch
-      });
-
-      clearTimeout(timeoutId); // Cancela o timer se a resposta chegou a tempo
-
-      const data = (await response.json()) as {
-        response?: { sentence?: { text: string }[] };
-        session_id: string;
-        total_tokens: number;
-        detail?: string;
+    const sendAttempt = async (retrying = false): Promise<void> => {
+      const userMessage: Message = {
+        id: Date.now(),
+        who: "Visitante",
+        text: trimmed,
       };
 
-      if (!response.ok) {
-        throw new Error(data?.detail || "Erro ao enviar mensagem.");
-      }
+      setMessages((previous) => [...previous, userMessage]);
+      setInput("");
+      setActiveEmoji("🤖");
+      setIsSending(true);
 
-      const replyText = (data.response?.sentence ?? [])
-        .map((item) => item.text)
-        .join(" ")
-        .trim();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 130000);
 
-      setSessionId(data.session_id);
-      setTokens(data.total_tokens ?? 0);
+      try {
+        const response = await fetch(`${API_URL}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: trimmed,
+            session_id: sessionId ?? undefined,
+          }),
+          signal: controller.signal,
+        });
 
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: Date.now() + 1,
-          who: "JAIME",
-          text: replyText || "Não consegui responder agora.",
-        },
-      ]);
-    } catch (error) {
-      clearTimeout(timeoutId); // Garante que o timer seja limpo mesmo em caso de erro
+        clearTimeout(timeoutId);
 
-      let errorMessage = "Erro desconhecido";
-      if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          errorMessage =
-            "A conexão com o JAIME demorou muito e foi cancelada. Tente novamente.";
-        } else {
-          errorMessage = error.message;
+        if (!response.ok || !response.body) {
+          throw new Error("Falha na conexão com o servidor.");
         }
-      }
 
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: Date.now() + 2,
-          who: "JAIME",
-          text: `Erro de conexão: ${errorMessage}`,
-        },
-      ]);
-    } finally {
-      setIsSending(false); // <-- Isso agora SEMPRE vai executar, travando ou não
-    }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let accumulatedText = "";
+        let isDone = false;
+        let lastStreamingText = "";
+        let lastEmoji = "🤖";
+        const streamingMessageId = Date.now() + 1;
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            id: streamingMessageId,
+            who: "JAIME",
+            text: "",
+          },
+        ]);
+
+        while (!isDone) {
+          const { done, value } = await reader.read();
+          if (done) {
+            isDone = true;
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          accumulatedText += chunk;
+
+          const metaIndex = accumulatedText.indexOf('\n\n{"_meta":');
+          const payload =
+            metaIndex === -1
+              ? accumulatedText
+              : accumulatedText.slice(0, metaIndex);
+
+          const snapshot = extractStreamSnapshot(payload);
+
+          if (snapshot) {
+            if (snapshot.emoji) {
+              lastEmoji = snapshot.emoji;
+              setActiveEmoji(snapshot.emoji);
+            }
+
+            if (snapshot.text) {
+              lastStreamingText = snapshot.text;
+              setMessages((previous) =>
+                previous.map((msg) =>
+                  msg.id === streamingMessageId
+                    ? { ...msg, text: snapshot.text }
+                    : msg,
+                ),
+              );
+            }
+          }
+
+          if (metaIndex !== -1) {
+            isDone = true;
+            const metaString = accumulatedText.substring(metaIndex + 2);
+            try {
+              const meta = JSON.parse(metaString);
+              if (meta._error) {
+                throw new Error(meta._error);
+              }
+              if (meta._meta?.session_id) setSessionId(meta._meta.session_id);
+              if (typeof meta._meta?.total_tokens === "number")
+                setTokens(meta._meta.total_tokens);
+            } catch {
+              // ignora metadados incompletos e segue com o texto já exibido
+            }
+          }
+        }
+
+        const finalPayload = accumulatedText.trim();
+        if (!finalPayload || !lastStreamingText) {
+          if (retrying) {
+            throw new Error(
+              "O modelo respondeu sem texto válido. Tente novamente.",
+            );
+          }
+
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: Date.now() + 2,
+              who: "JAIME",
+              text: "Resposta incompleta. Tentando novamente...",
+            },
+          ]);
+
+          await sendAttempt(true);
+          return;
+        }
+
+        setActiveEmoji(lastEmoji || "🤖");
+      } catch (error) {
+        clearTimeout(timeoutId);
+        let errorMessage = "Erro desconhecido";
+
+        if (error instanceof Error) {
+          if (error.name === "AbortError") {
+            errorMessage =
+              "A conexão demorou muito e foi cancelada. Tente novamente.";
+          } else {
+            errorMessage = error.message;
+          }
+        }
+
+        if (!retrying) {
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: Date.now() + 2,
+              who: "JAIME",
+              text: "Resposta incompleta. Tentando novamente...",
+            },
+          ]);
+          await sendAttempt(true);
+          return;
+        }
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            id: Date.now() + 3,
+            who: "JAIME",
+            text: `Erro de conexão: ${errorMessage}`,
+          },
+        ]);
+      } finally {
+        setIsSending(false);
+        setActiveEmoji("◉");
+      }
+    };
+
+    await sendAttempt(false);
   };
 
   return (
@@ -202,10 +386,15 @@ function App() {
             setInput={setInput}
             onSend={handleSend}
             disabled={isSending}
+            thinkingText={thinkingText}
           />
         </div>
 
-        <OrbCenter stateLabel={stateLabel} />
+        <OrbCenter
+          stateLabel={stateLabel}
+          activeEmoji={activeEmoji}
+          isSpeaking={isSending}
+        />
 
         <RightPanel expTime={expTime} waveHeights={waveHeights} />
       </main>
