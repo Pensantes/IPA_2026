@@ -34,18 +34,16 @@ Estrutura exigida:
 "sentence": [
 {
 "emoji": "🤖",
-"text": "O texto que será falado pelo sistema de voz.",
-"tone": "neutro"
+"text": "O texto que será falado pelo sistema de voz."
 }
 ]
 }
 
 Regras do JSON:
 
-1. `emoji`: Um único emoji que representa a frase.
+1. `emoji`: Um único emoji que representa a frase. Pode usar vários diferentes, sem restrição.
 2. `text`: O texto falado. Curto, direto, sem formatação markdown interna.
-3. `tone`: Deve ser EXATAMENTE um destes: "neutro", "seco", "irônico", "curioso", "brincalhão", "sério", "pensativo", "satisfeito".
-4. Quebre a resposta em múltiplos itens no array `sentence` se houver pausas naturais ou mudanças de tom.
+3. Quebre a resposta em múltiplos itens no array `sentence` se houver pausas naturais ou mudanças de tom.
 
 ## Regras de Segurança e Limites
 

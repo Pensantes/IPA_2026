@@ -1,4 +1,20 @@
-function RightPanel({ expTime, waveHeights }) {
+/** @format */
+
+interface RightPanelProps {
+  expTime: string;
+  waveHeights: number[];
+  isSpeaking?: boolean;
+  isTtsReady?: boolean;
+  onSpeakToggle?: () => void; // Tornada opcional
+}
+
+function RightPanel({
+  expTime,
+  waveHeights,
+  isSpeaking = false,
+  isTtsReady = false,
+  onSpeakToggle,
+}: RightPanelProps) {
   return (
     <aside className="col-right">
       <div className="panel">
@@ -29,15 +45,21 @@ function RightPanel({ expTime, waveHeights }) {
         </div>
 
         <div className="btn-row">
-          <button type="button" className="btn">Pausar</button>
-          <button type="button" className="btn stop">Parar</button>
+          <button type="button" className="btn">
+            Pausar
+          </button>
+          <button type="button" className="btn stop">
+            Parar
+          </button>
         </div>
       </div>
 
       <div className="panel audio-panel">
         <div className="panel-head">
           <div className="panel-title">Áudio</div>
-          <div className="panel-flag ok">Mic ativo</div>
+          <div className="panel-flag ok">
+            {isTtsReady ? "Piper ativo" : "Mic ativo"}
+          </div>
         </div>
 
         <div className="wave" id="wave">
@@ -47,10 +69,18 @@ function RightPanel({ expTime, waveHeights }) {
         </div>
 
         <div className="mic-row">
-          <button type="button" className="mic-btn">●</button>
+          {/* O botão só é renderizado se a função onSpeakToggle for fornecida */}
+          {onSpeakToggle && (
+            <button type="button" className="mic-btn" onClick={onSpeakToggle}>
+              {isSpeaking ? "■" : "●"}
+            </button>
+          )}
           <div className="mic-label">
-            <b>Captando voz</b>
-            Fale naturalmente — o JAIME está ouvindo
+            <b>{isSpeaking ? "JAIME falando" : "Captando voz"}</b>
+            <br />
+            {isTtsReady
+              ? "A voz está sendo gerada em tempo real pelo Piper."
+              : "Fale naturalmente — o JAIME está ouvindo"}
           </div>
         </div>
 
@@ -63,7 +93,7 @@ function RightPanel({ expTime, waveHeights }) {
         </div>
       </div>
     </aside>
-  )
+  );
 }
 
-export default RightPanel
+export default RightPanel;

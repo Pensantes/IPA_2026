@@ -1,12 +1,13 @@
 /** @format */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import "./App.css";
 import Topbar from "./components/Topbar";
 import StatusPanel from "./components/StatusPanel";
 import ChatPanel from "./components/ChatPanel";
 import OrbCenter from "./components/OrbCenter";
 import RightPanel from "./components/RightPanel";
+import TTSTester from "./components/TTSTester";
 
 const API_URL = "http://localhost:8000";
 
@@ -20,96 +21,66 @@ function formatDuration(totalSeconds: number): string {
   return `${hours}:${minutes}:${seconds}`;
 }
 
+// Hook de máquina de escrever com reset inteligente
+function useTypewriter(text: string, speed = 30) {
+  const [displayed, setDisplayed] = useState("");
+  const prevTextRef = useRef("");
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+
+    // Se o texto novo não começa com o anterior, é uma nova mensagem. Reseta.
+    if (
+      text.length < prevTextRef.current.length ||
+      !text.startsWith(prevTextRef.current)
+    ) {
+      setDisplayed("");
+      prevTextRef.current = "";
+    }
+
+    const animate = () => {
+      setDisplayed((prev) => {
+        if (prev.length >= text.length) {
+          prevTextRef.current = text; // Marca como totalmente digitado
+          return prev;
+        }
+        // Digita 2 caracteres por vez para fluidez
+        const next = text.slice(0, prev.length + 2);
+        timeout = setTimeout(animate, speed);
+        return next;
+      });
+    };
+
+    animate();
+    return () => clearTimeout(timeout);
+  }, [text, speed]);
+
+  return displayed;
+}
+
 interface Message {
   id: number;
   who: string;
   text: string;
 }
 
-const initialMessages: Message[] = [];
-
-function escapeJsonString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\"/g, '\\\"')
-    .replace(/\n/g, " ")
-    .replace(/\r/g, " ")
-    .replace(/\t/g, " ");
-}
-
-function extractStreamSnapshot(rawText: string): {
-  text: string;
-  emoji: string;
-} | null {
-  const trimmed = rawText.trim();
-  if (!trimmed) return null;
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      Array.isArray(parsed.sentence)
-    ) {
-      const items = parsed.sentence.filter(
-        (item: { text?: string; emoji?: string }) =>
-          item && typeof item === "object",
-      );
-
-      const text = items
-        .map((item) => item.text ?? "")
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-
-      const emoji =
-        [...items].reverse().find((item) => item.emoji)?.emoji ?? "🤖";
-      return { text, emoji };
-    }
-  } catch {
-    // fallback best-effort parsing while stream is still incomplete
-  }
-
-  const raw = trimmed;
-  const textMatches = Array.from(
-    raw.matchAll(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/g),
-  );
-  const emojiMatches = Array.from(
-    raw.matchAll(/"emoji"\s*:\s*"((?:\\.|[^"\\])*)"/g),
-  );
-
-  const text = textMatches
-    .map((match) =>
-      match[1].replace(/\\n/g, " ").replace(/\\"/g, '"').replace(/\\\\/g, "\\"),
-    )
-    .join(" ")
-    .trim();
-
-  const emoji = emojiMatches.length
-    ? emojiMatches[emojiMatches.length - 1][1].replace(/\\n/g, " ")
-    : "🤖";
-
-  if (!text && !emojiMatches.length) {
-    return null;
-  }
-
-  return { text: text || "JAIME está respondendo...", emoji: emoji || "🤖" };
-}
-
 function App() {
   const startRef = useRef<number>(Date.now());
+  const audioQueue = useRef<Array<{ text: string; emoji: string }>>([]);
+  const isPlaying = useRef(false);
+  const streamFinished = useRef(false);
+  const streamingMessageIdRef = useRef<number | null>(null); // Rastreia o ID exato da mensagem ativa
 
   const [clock, setClock] = useState<string>("00:00:00");
   const [uptime, setUptime] = useState<string>("00:00:00");
-  const [tokens, setTokens] = useState<number>(0); // Começa em 0, será atualizado pela API
-  const [loadPct, setLoadPct] = useState<string>("22%");
-  const [loadBar, setLoadBar] = useState<number>(22);
+  const [tokens, setTokens] = useState<number>(0);
   const [stateLabel, setStateLabel] = useState<string>("IDLE");
   const [expTime, setExpTime] = useState<string>("00:12");
   const [input, setInput] = useState<string>("");
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [thinkingText, setThinkingText] = useState<string>(
     "Reunindo contexto...",
   );
@@ -118,47 +89,77 @@ function App() {
     Array.from({ length: 48 }, () => 6 + Math.random() * 90),
   );
 
+  const [streamingTargetText, setStreamingTargetText] = useState("");
+  const displayedStreamingText = useTypewriter(streamingTargetText, 35);
+
+  // Fila de reprodução de áudio
+  const processQueue = useCallback(async () => {
+    if (isPlaying.current || audioQueue.current.length === 0) {
+      if (streamFinished.current && audioQueue.current.length === 0) {
+        setActiveEmoji("◉");
+        setIsSpeaking(false);
+      }
+      return;
+    }
+
+    isPlaying.current = true;
+    setIsSpeaking(true);
+    const item = audioQueue.current[0];
+    setActiveEmoji(item.emoji);
+
+    try {
+      const response = await fetch(`${API_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: item.text }),
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+
+        await new Promise<void>((resolve) => {
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          audio.play().catch(() => resolve());
+        });
+      }
+    } catch (e) {
+      console.error("TTS error", e);
+    }
+
+    audioQueue.current.shift();
+    isPlaying.current = false;
+    processQueue(); // Processa o próximo da fila
+  }, []);
+
+  // Timers de UI
   useEffect(() => {
     const tick = () => {
-      const now = new Date();
-      setClock(
-        now.toLocaleTimeString("pt-BR", {
-          hour12: false,
-        }),
-      );
-
+      setClock(new Date().toLocaleTimeString("pt-BR", { hour12: false }));
       const elapsed = (Date.now() - startRef.current) / 1000;
       setUptime(formatDuration(elapsed));
       setExpTime(formatDuration(elapsed % 600).slice(3));
-
-      // REMOVIDO: setTokens(Math.floor(elapsed * 14));
-      // Os tokens agora vêm exclusivamente da resposta da API.
     };
-
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      const value = 15 + Math.random() * 30;
-      setLoadBar(Number(value.toFixed(0)));
-      setLoadPct(`${value.toFixed(0)}%`);
-    }, 1400);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const states = ["IDLE", "OUVINDO", "PROCESSANDO", "RESPONDENDO"];
     let index = 0;
-
     const timer = setInterval(() => {
       index = (index + 1) % states.length;
       setStateLabel(states[index]);
     }, 3200);
-
     return () => clearInterval(timer);
   }, []);
 
@@ -166,7 +167,6 @@ function App() {
     const timer = setInterval(() => {
       setWaveHeights(Array.from({ length: 48 }, () => 6 + Math.random() * 90));
     }, 220);
-
     return () => clearInterval(timer);
   }, []);
 
@@ -175,23 +175,18 @@ function App() {
       setThinkingText("Reunindo contexto...");
       return;
     }
-
     const steps = [
       "Reunindo contexto...",
       "Analisando memórias...",
       "Pensando na resposta...",
       "Estruturando resposta...",
-      "Preparando a finalização...",
     ];
-
     let index = 0;
     setThinkingText(steps[0]);
-
     const timer = setInterval(() => {
       index = (index + 1) % steps.length;
       setThinkingText(steps[index]);
-    }, 1400);
-
+    }, 4000);
     return () => clearInterval(timer);
   }, [isSending]);
 
@@ -199,187 +194,172 @@ function App() {
     const trimmed = input.trim();
     if (!trimmed || isSending) return;
 
-    const sendAttempt = async (retrying = false): Promise<void> => {
-      const userMessage: Message = {
-        id: Date.now(),
-        who: "Visitante",
-        text: trimmed,
-      };
+    // 1. Reset total de estados para nova interação
+    audioQueue.current = [];
+    isPlaying.current = false;
+    streamFinished.current = false;
+    setStreamingTargetText("");
+    streamingMessageIdRef.current = null;
 
-      setMessages((previous) => [...previous, userMessage]);
-      setInput("");
-      setActiveEmoji("🤖");
-      setIsSending(true);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 130000);
-
-      try {
-        const response = await fetch(`${API_URL}/chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message: trimmed,
-            session_id: sessionId ?? undefined,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok || !response.body) {
-          throw new Error("Falha na conexão com o servidor.");
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let accumulatedText = "";
-        let isDone = false;
-        let lastStreamingText = "";
-        let lastEmoji = "🤖";
-        const streamingMessageId = Date.now() + 1;
-
-        setMessages((previous) => [
-          ...previous,
-          {
-            id: streamingMessageId,
-            who: "JAIME",
-            text: "",
-          },
-        ]);
-
-        while (!isDone) {
-          const { done, value } = await reader.read();
-          if (done) {
-            isDone = true;
-            break;
-          }
-
-          const chunk = decoder.decode(value, { stream: true });
-          accumulatedText += chunk;
-
-          const metaIndex = accumulatedText.indexOf('\n\n{"_meta":');
-          const payload =
-            metaIndex === -1
-              ? accumulatedText
-              : accumulatedText.slice(0, metaIndex);
-
-          const snapshot = extractStreamSnapshot(payload);
-
-          if (snapshot) {
-            if (snapshot.emoji) {
-              lastEmoji = snapshot.emoji;
-              setActiveEmoji(snapshot.emoji);
-            }
-
-            if (snapshot.text) {
-              lastStreamingText = snapshot.text;
-              setMessages((previous) =>
-                previous.map((msg) =>
-                  msg.id === streamingMessageId
-                    ? { ...msg, text: snapshot.text }
-                    : msg,
-                ),
-              );
-            }
-          }
-
-          if (metaIndex !== -1) {
-            isDone = true;
-            const metaString = accumulatedText.substring(metaIndex + 2);
-            try {
-              const meta = JSON.parse(metaString);
-              if (meta._error) {
-                throw new Error(meta._error);
-              }
-              if (meta._meta?.session_id) setSessionId(meta._meta.session_id);
-              if (typeof meta._meta?.total_tokens === "number")
-                setTokens(meta._meta.total_tokens);
-            } catch {
-              // ignora metadados incompletos e segue com o texto já exibido
-            }
-          }
-        }
-
-        const finalPayload = accumulatedText.trim();
-        if (!finalPayload || !lastStreamingText) {
-          if (retrying) {
-            throw new Error(
-              "O modelo respondeu sem texto válido. Tente novamente.",
-            );
-          }
-
-          setMessages((previous) => [
-            ...previous,
-            {
-              id: Date.now() + 2,
-              who: "JAIME",
-              text: "Resposta incompleta. Tentando novamente...",
-            },
-          ]);
-
-          await sendAttempt(true);
-          return;
-        }
-
-        setActiveEmoji(lastEmoji || "🤖");
-      } catch (error) {
-        clearTimeout(timeoutId);
-        let errorMessage = "Erro desconhecido";
-
-        if (error instanceof Error) {
-          if (error.name === "AbortError") {
-            errorMessage =
-              "A conexão demorou muito e foi cancelada. Tente novamente.";
-          } else {
-            errorMessage = error.message;
-          }
-        }
-
-        if (!retrying) {
-          setMessages((previous) => [
-            ...previous,
-            {
-              id: Date.now() + 2,
-              who: "JAIME",
-              text: "Resposta incompleta. Tentando novamente...",
-            },
-          ]);
-          await sendAttempt(true);
-          return;
-        }
-
-        setMessages((previous) => [
-          ...previous,
-          {
-            id: Date.now() + 3,
-            who: "JAIME",
-            text: `Erro de conexão: ${errorMessage}`,
-          },
-        ]);
-      } finally {
-        setIsSending(false);
-        setActiveEmoji("◉");
-      }
+    const userMessage: Message = {
+      id: Date.now(),
+      who: "Visitante",
+      text: trimmed,
     };
+    const streamingMessageId = Date.now() + 1;
+    streamingMessageIdRef.current = streamingMessageId; // Salva o ID para atualizar com precisão
 
-    await sendAttempt(false);
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      { id: streamingMessageId, who: "JAIME", text: "" },
+    ]);
+    setInput("");
+    setIsSending(true);
+    setActiveEmoji("◉");
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 130000);
+
+    try {
+      const response = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmed,
+          session_id: sessionId ?? undefined,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      if (!response.ok || !response.body)
+        throw new Error("Falha na conexão com o servidor.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      let accumulatedText = "";
+      let processedSentencesCount = 0;
+      let isDone = false;
+
+      while (!isDone) {
+        const { done, value } = await reader.read();
+        if (done) {
+          isDone = true;
+          break;
+        }
+
+        accumulatedText += decoder.decode(value, { stream: true });
+
+        try {
+          const parsed = JSON.parse(accumulatedText);
+
+          if (parsed && parsed.sentence && Array.isArray(parsed.sentence)) {
+            const newSentences = parsed.sentence.slice(processedSentencesCount);
+
+            for (const item of newSentences) {
+              if (item.text) {
+                // 1. Alimenta a máquina de escrever
+                setStreamingTargetText(
+                  (prev) => prev + (prev ? " " : "") + item.text,
+                );
+
+                const emoji = item.emoji || "🤖";
+
+                // 2. Atualiza o Orb
+                setActiveEmoji(emoji);
+
+                // 3. Fila de TTS
+                audioQueue.current.push({ text: item.text, emoji });
+                if (!isPlaying.current) {
+                  processQueue();
+                }
+              }
+            }
+            processedSentencesCount = parsed.sentence.length;
+          }
+        } catch (e) {
+          // SyntaxError é esperado e ignorado enquanto o JSON está incompleto
+          if (!(e instanceof SyntaxError)) {
+            console.error("Erro inesperado no parse:", e);
+          }
+        }
+      }
+
+      streamFinished.current = true;
+
+      // Extrai metadados no final
+      const metaIndex = accumulatedText.indexOf('\n\n{"_meta":');
+      if (metaIndex !== -1) {
+        try {
+          const meta = JSON.parse(accumulatedText.substring(metaIndex + 2));
+          if (meta._meta?.session_id) setSessionId(meta._meta.session_id);
+          if (typeof meta._meta?.total_tokens === "number")
+            setTokens(meta._meta.total_tokens);
+        } catch {
+          /* ignora */
+        }
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const errorMessage =
+        error instanceof Error
+          ? error.name === "AbortError"
+            ? "A conexão demorou muito e foi cancelada."
+            : error.message
+          : "Erro desconhecido";
+
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 2, who: "JAIME", text: `Erro: ${errorMessage}` },
+      ]);
+      setActiveEmoji("◉");
+      setIsSpeaking(false);
+    } finally {
+      setIsSending(false);
+    }
   };
+
+  // Efeito para atualizar o chat com o texto sendo "digitado"
+  useEffect(() => {
+    if (!streamingMessageIdRef.current) return;
+
+    const msgId = streamingMessageIdRef.current;
+    setMessages((prev) => {
+      const msgIndex = prev.findIndex((m) => m.id === msgId);
+      if (msgIndex === -1) return prev; // Mensagem não encontrada
+
+      if (prev[msgIndex].text === displayedStreamingText) return prev; // Já está atualizado
+
+      const newMessages = [...prev];
+      newMessages[msgIndex] = {
+        ...prev[msgIndex],
+        text: displayedStreamingText,
+      };
+      return newMessages;
+    });
+  }, [displayedStreamingText]);
+
+  // Efeito de limpeza final quando tudo termina
+  useEffect(() => {
+    if (
+      streamFinished.current &&
+      !isPlaying.current &&
+      audioQueue.current.length === 0
+    ) {
+      setActiveEmoji("◉");
+      setIsSpeaking(false);
+      streamingMessageIdRef.current = null; // Limpa o ID para a próxima vez
+    }
+  }, [isPlaying, streamFinished]);
 
   return (
     <div className="shell">
       <Topbar clock={clock} />
-
       <main className="main-grid">
         <div className="col-left">
-          <StatusPanel
-            uptime={uptime}
-            tokens={tokens}
-            loadPct={loadPct}
-            loadBar={loadBar}
-          />
+          <StatusPanel uptime={uptime} tokens={tokens} />
           <ChatPanel
             messages={messages}
             input={input}
@@ -389,16 +369,18 @@ function App() {
             thinkingText={thinkingText}
           />
         </div>
-
         <OrbCenter
           stateLabel={stateLabel}
           activeEmoji={activeEmoji}
-          isSpeaking={isSending}
+          isSpeaking={isSpeaking}
         />
-
-        <RightPanel expTime={expTime} waveHeights={waveHeights} />
+        {/* <RightPanel
+          expTime={expTime}
+          waveHeights={waveHeights}
+          isSpeaking={isSpeaking}
+        /> */}
+        <TTSTester />
       </main>
-
       <footer className="legend">
         Laboratório do Futuro · Ilum — Escola de Ciência · IPA 2026
       </footer>
